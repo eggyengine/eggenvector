@@ -2,7 +2,7 @@
 
 eggenvector (like eigenvector haha) is a math library backed by the zig SIMD `@Vector` types, and does not contain any external dependencies. 
 
-The library specifically targets vulkan-based mathematics, however a few tweaks can allow to be fit for anything (speciically with matrices). 
+The library specifically targets vulkan-based mathematics (as is used for the eggy engine), however many functions are available that allow for other renderers and physics engines contexts to be available (such as OpenGL). 
 
 - Vector2|3|4|any
 - Mat|2x2|3x3|4x4|any_rowXany_col
