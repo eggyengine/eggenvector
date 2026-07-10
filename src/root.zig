@@ -3,8 +3,10 @@
 //! includes:
 //! - vector (2, 3, 4)
 //! - matrix (2x2, 3x3, 4x4, axb)
-//! - quaternion
-//! - transform
+//! - quaternion (and unit quaternion)
+//! - unit-norm wrappers (Unit, UnitComplex, UnitQuaternion)
+//! - transform (isometry, similarity, affine, projective, general)
+//! - projections (perspective, orthographic)
 //! - angles
 //!
 //! for primarily `f32` but with support for `f64`, and backed by SIMD `@Vector` types
@@ -99,11 +101,66 @@ pub const Quat = quat.Quat;
 pub const Quatd = quat.Quatd;
 pub const Quaternion = quat.Quaternion;
 
+pub const UnitQuaternion = quat.UnitQuaternion;
+pub const UnitQuat = quat.UnitQuat;
+/// A `f64` unit quaternion.
+pub const UnitQuatd = quat.UnitQuatd;
+
+// --------------- unit-norm wrappers ---------------
+const unit = @import("unit.zig");
+
+/// A wrapper for algebraic entities with a norm equal to one, e.g. `Unit(Vec3)`.
+pub const Unit = unit.Unit;
+
+const complex = @import("complex.zig");
+
+/// A 2D rotation stored as a unit complex number (built from an Euler angle).
+pub const UnitComplex = complex.UnitComplex;
+
+// --------------- transformations ---------------
+const isometry = @import("isometry.zig");
+
+/// A 2D isometry (translation ⨯ rotation).
+pub const Isometry2 = isometry.Isometry2;
+/// A 3D isometry (translation ⨯ rotation).
+pub const Isometry3 = isometry.Isometry3;
+
+const similarity = @import("similarity.zig");
+
+/// A 2D similarity (translation ⨯ rotation ⨯ uniform scale).
+pub const Similarity2 = similarity.Similarity2;
+/// A 3D similarity (translation ⨯ rotation ⨯ uniform scale).
+pub const Similarity3 = similarity.Similarity3;
+
+const homogeneous = @import("homogeneous.zig");
+
+pub const TransformCategory = homogeneous.TransformCategory;
+/// A general 2D transformation (not necessarily invertible), stored as a homogeneous matrix.
+pub const Transform2 = homogeneous.Transform2;
+/// A general 3D transformation (not necessarily invertible), stored as a homogeneous matrix.
+pub const Transform3 = homogeneous.Transform3;
+/// An invertible 2D transformation stored as a homogeneous matrix.
+pub const Projective2 = homogeneous.Projective2;
+/// An invertible 3D transformation stored as a homogeneous matrix.
+pub const Projective3 = homogeneous.Projective3;
+/// A 2D affine transformation stored as a homogeneous matrix.
+pub const Affine2 = homogeneous.Affine2;
+/// A 3D affine transformation stored as a homogeneous matrix.
+pub const Affine3 = homogeneous.Affine3;
+
+// --------------- projections ---------------
+const projection = @import("projection.zig");
+
+/// A 3D perspective projection for computer graphics.
+pub const Perspective3 = projection.Perspective3;
+/// A 3D orthographic projection for computer graphics.
+pub const Orthographic3 = projection.Orthographic3;
+
 // --------------- helpers ---------------
 
 /// Returns an identity quaternion rotated at an angle on an axis
 pub fn rotate(angle: Angle, axis: Vec3) Quat {
-    return Quat.identity().rotate(angle, axis);
+    return Quat.identity().rotate(angle.toRadians(), axis);
 }
 
 /// Create a look-at view matrix using f32.
@@ -136,5 +193,17 @@ pub fn Padding(comptime T: type, comptime count: usize) type {
 
 pub const ang = @import("angle.zig");
 
-pub const Angle = Angle(f32);
-pub const Angled = Angle(f64);
+pub const Angle = ang.Angle(f32);
+pub const Angled = ang.Angle(f64);
+
+// --------------- tests ---------------
+
+test {
+    _ = @import("unit.zig");
+    _ = @import("complex.zig");
+    _ = @import("quat.zig");
+    _ = @import("isometry.zig");
+    _ = @import("similarity.zig");
+    _ = @import("homogeneous.zig");
+    _ = @import("projection.zig");
+}

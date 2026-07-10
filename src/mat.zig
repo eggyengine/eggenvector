@@ -527,14 +527,15 @@ pub fn inverse4x4(comptime T: type, m: Matrix(T, 4, 4)) ?Matrix(T, 4, 4) {
     const adj2 = v0.mul(f1).sub(v1.mul(f3)).add(v3.mul(f5));
     const adj3 = v0.mul(f2).sub(v1.mul(f4)).add(v2.mul(f5));
 
-    const inv0 = Vec4{ .x = adj0.x * sign_a.x, .y = adj0.y * sign_b.y, .z = adj0.z * sign_a.z, .w = adj0.w * sign_b.w };
-    const inv1 = Vec4{ .x = adj1.x * sign_b.x, .y = adj1.y * sign_a.y, .z = adj1.z * sign_b.z, .w = adj1.w * sign_a.w };
-    const inv2 = Vec4{ .x = adj2.x * sign_a.x, .y = adj2.y * sign_b.y, .z = adj2.z * sign_a.z, .w = adj2.w * sign_b.w };
-    const inv3 = Vec4{ .x = adj3.x * sign_b.x, .y = adj3.y * sign_a.y, .z = adj3.z * sign_b.z, .w = adj3.w * sign_a.w };
+    const inv0 = adj0.mul(sign_a);
+    const inv1 = adj1.mul(sign_b);
+    const inv2 = adj2.mul(sign_a);
+    const inv3 = adj3.mul(sign_b);
 
-    const row0 = Vec4{ .x = m.data[0][0], .y = m.data[0][1], .z = m.data[0][2], .w = m.data[0][3] };
-    const dot0 = Vec4{ .x = row0.x * inv0.x, .y = row0.y * inv0.y, .z = row0.z * inv0.z, .w = row0.w * inv0.w };
-    const det = dot0.x + dot0.y + dot0.z + dot0.w;
+    // det = first column of m · first row of the adjugate
+    const adj_row0 = Vec4{ .x = inv0.x, .y = inv1.x, .z = inv2.x, .w = inv3.x };
+    const col0 = Vec4{ .x = m.data[0][0], .y = m.data[0][1], .z = m.data[0][2], .w = m.data[0][3] };
+    const det = col0.dot(adj_row0);
 
     if (@abs(det) < 1e-10) return null;
 

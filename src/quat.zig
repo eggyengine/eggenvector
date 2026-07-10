@@ -86,7 +86,7 @@ pub fn Quaternion(comptime T: type) type {
         }
 
         /// Create quaternion from rotation matrix.
-        pub fn fromMatrix(m: mat.Mat4x4(T)) Self {
+        pub fn fromMatrix(m: mat.Matrix(T, 4, 4)) Self {
             const trace = m.get(0, 0) + m.get(1, 1) + m.get(2, 2);
 
             if (trace > 0) {
@@ -312,7 +312,7 @@ pub fn Quaternion(comptime T: type) type {
         }
 
         /// Convert to 4x4 rotation matrix.
-        pub fn toMatrix(self: Self) mat.Mat4 {
+        pub fn toMatrix(self: Self) mat.Matrix(T, 4, 4) {
             const q = self.normalize();
             const xx = q.v[0] * q.v[0];
             const yy = q.v[1] * q.v[1];
@@ -324,7 +324,7 @@ pub fn Quaternion(comptime T: type) type {
             const wy = q.v[3] * q.v[1];
             const wz = q.v[3] * q.v[2];
 
-            return mat.Mat4{
+            return mat.Matrix(T, 4, 4){
                 .data = .{
                     .{ 1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0 }, // col 0
                     .{ 2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0 }, // col 1
@@ -395,3 +395,195 @@ pub fn Quaternion(comptime T: type) type {
 
 pub const Quat = Quaternion(f32);
 pub const Quatd = Quaternion(f64);
+
+/// A quaternion with a norm equal to one, representing a 3D rotation.
+///
+/// All operations preserve the unit-norm invariant, so `inverse` is the
+/// cheap conjugate rather than a full division by the squared norm.
+pub fn UnitQuaternion(comptime T: type) type {
+    return struct {
+        quat: Quaternion(T),
+
+        const Self = @This();
+        const Q = Quaternion(T);
+
+        /// The identity rotation.
+        pub fn identity() Self {
+            return .{ .quat = Q.identity() };
+        }
+
+        /// Normalize an arbitrary quaternion into a unit quaternion.
+        pub fn fromQuaternion(q: Q) Self {
+            return .{ .quat = q.normalize() };
+        }
+
+        /// Wrap without normalizing. The caller guarantees the unit-norm invariant.
+        pub fn newUnchecked(q: Q) Self {
+            return .{ .quat = q };
+        }
+
+        /// From a rotation axis (need not be normalized, must be non-zero) and an angle in radians.
+        pub fn fromAxisAngle(rotation_axis: vec.Vector3(T), rotation_angle: T) Self {
+            return .{ .quat = Q.fromAxisAngle(rotation_axis, rotation_angle) };
+        }
+
+        /// From a scaled axis (axis * angle). The zero vector maps to the identity.
+        pub fn fromScaledAxis(v: vec.Vector3(T)) Self {
+            const a = v.length();
+            if (a < 1e-10) return identity();
+            return fromAxisAngle(v.scale(1 / a), a);
+        }
+
+        /// From Euler angles (pitch, yaw, roll in radians).
+        pub fn fromEuler(pitch: T, yaw: T, roll: T) Self {
+            return .{ .quat = Q.fromEuler(pitch, yaw, roll).normalize() };
+        }
+
+        /// The rotation that maps direction `from` onto direction `to`.
+        pub fn rotationBetween(from: vec.Vector3(T), to: vec.Vector3(T)) Self {
+            return .{ .quat = Q.fromToRotation(from, to).normalize() };
+        }
+
+        /// From a rotation matrix.
+        pub fn fromRotationMatrix(m: mat.Matrix(T, 4, 4)) Self {
+            return .{ .quat = Q.fromMatrix(m).normalize() };
+        }
+
+        /// The underlying quaternion.
+        pub fn inner(self: Self) Q {
+            return self.quat;
+        }
+
+        /// The rotation angle in radians.
+        pub fn angle(self: Self) T {
+            return self.quat.getAngle();
+        }
+
+        /// The rotation axis.
+        pub fn axis(self: Self) vec.Vector3(T) {
+            return self.quat.getAxis();
+        }
+
+        /// The rotation axis scaled by the rotation angle.
+        pub fn scaledAxis(self: Self) vec.Vector3(T) {
+            return self.axis().scale(self.angle());
+        }
+
+        /// Compose two rotations.
+        pub fn mul(self: Self, other: Self) Self {
+            return .{ .quat = self.quat.mul(other.quat) };
+        }
+
+        /// The inverse rotation. For unit quaternions this is the conjugate.
+        pub fn inverse(self: Self) Self {
+            return .{ .quat = self.quat.conjugate() };
+        }
+
+        /// Rotate a 3D vector.
+        pub fn rotateVector(self: Self, v: vec.Vector3(T)) vec.Vector3(T) {
+            return self.quat.rotateVector(v);
+        }
+
+        /// Rotate a 3D vector by the inverse of this rotation.
+        pub fn inverseRotateVector(self: Self, v: vec.Vector3(T)) vec.Vector3(T) {
+            return self.quat.conjugate().rotateVector(v);
+        }
+
+        /// Spherical linear interpolation.
+        pub fn slerp(self: Self, other: Self, t: T) Self {
+            return .{ .quat = self.quat.slerp(other.quat, t) };
+        }
+
+        /// Normalized linear interpolation (fast approximation of slerp).
+        pub fn nlerp(self: Self, other: Self, t: T) Self {
+            return .{ .quat = self.quat.nlerp(other.quat, t) };
+        }
+
+        /// Raise to a power (a fraction of the rotation).
+        pub fn powSelf(self: Self, t: T) Self {
+            return fromScaledAxis(self.scaledAxis().scale(t));
+        }
+
+        /// Re-normalize to correct accumulated floating point drift.
+        pub fn renormalize(self: Self) Self {
+            return .{ .quat = self.quat.normalize() };
+        }
+
+        /// Convert to a 4x4 homogeneous rotation matrix.
+        pub fn toHomogeneous(self: Self) mat.Matrix(T, 4, 4) {
+            return self.quat.toMatrix();
+        }
+
+        /// Convert to a 4x4 rotation matrix.
+        pub fn toRotationMatrix(self: Self) mat.Matrix(T, 4, 4) {
+            return self.quat.toMatrix();
+        }
+
+        /// Convert to Euler angles (pitch, yaw, roll in radians).
+        pub fn toEuler(self: Self) struct { pitch: T, yaw: T, roll: T } {
+            const e = self.quat.toEuler();
+            return .{ .pitch = e.pitch, .yaw = e.yaw, .roll = e.roll };
+        }
+
+        /// Check approximate equality, treating q and -q as the same rotation.
+        pub fn approxEql(self: Self, other: Self, epsilon: T) bool {
+            return self.quat.approxEqual(other.quat, epsilon) or
+                self.quat.approxEqual(other.quat.negate(), epsilon);
+        }
+    };
+}
+
+pub const UnitQuat = UnitQuaternion(f32);
+pub const UnitQuatd = UnitQuaternion(f64);
+
+const testing = std.testing;
+const V3 = vec.Vector3(f32);
+
+test "UnitQuaternion rotates a vector" {
+    const r = UnitQuat.fromAxisAngle(V3.unit_z, std.math.pi / 2.0);
+    const v = r.rotateVector(V3.unit_x);
+    try testing.expect(v.approxEql(V3.unit_y, 1e-6));
+}
+
+test "UnitQuaternion inverse round-trips" {
+    const r = UnitQuat.fromAxisAngle(V3.init(1, 2, 3), 0.9);
+    const v = V3.init(4, -5, 6);
+    try testing.expect(r.inverse().rotateVector(r.rotateVector(v)).approxEql(v, 1e-4));
+}
+
+test "UnitQuaternion fromQuaternion normalizes" {
+    const q = Quat.init(0, 0, 2, 0);
+    const r = UnitQuat.fromQuaternion(q);
+    try testing.expect(r.inner().isNormalized(1e-6));
+}
+
+test "UnitQuaternion composition matches sequential rotation" {
+    const a = UnitQuat.fromAxisAngle(V3.unit_x, 0.4);
+    const b = UnitQuat.fromAxisAngle(V3.unit_y, 0.7);
+    const v = V3.init(1, 2, 3);
+    const composed = a.mul(b).rotateVector(v);
+    const sequential = a.rotateVector(b.rotateVector(v));
+    try testing.expect(composed.approxEql(sequential, 1e-5));
+}
+
+test "UnitQuaternion homogeneous matrix agrees with rotateVector" {
+    const r = UnitQuat.fromAxisAngle(V3.init(1, 1, 0), 1.1);
+    const v = V3.init(2, -1, 0.5);
+    const via_matrix = mat.transformDirection4x4(f32, r.toHomogeneous(), v);
+    try testing.expect(via_matrix.approxEql(r.rotateVector(v), 1e-5));
+}
+
+test "UnitQuaternion slerp endpoints and axis" {
+    const a = UnitQuat.identity();
+    const b = UnitQuat.fromAxisAngle(V3.unit_y, 1.0);
+    try testing.expect(a.slerp(b, 0).approxEql(a, 1e-6));
+    try testing.expect(a.slerp(b, 1).approxEql(b, 1e-6));
+    const mid = a.slerp(b, 0.5);
+    try testing.expectApproxEqAbs(0.5, mid.angle(), 1e-5);
+}
+
+test "UnitQuaternion scaled axis round-trips" {
+    const r = UnitQuat.fromAxisAngle(V3.unit_z, 0.8);
+    const back = UnitQuat.fromScaledAxis(r.scaledAxis());
+    try testing.expect(back.approxEql(r, 1e-5));
+}

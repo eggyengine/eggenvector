@@ -6,6 +6,13 @@ The library specifically targets vulkan-based mathematics (as is used for the eg
 
 - Vector2|3|4|any
 - Mat|2x2|3x3|4x4|any_rowXany_col
+- Quaternion, UnitQuaternion
+- UnitComplex (2D rotation from an euler angle)
+- Unit(T) — algebraic entities with a norm equal to one, e.g. `Unit(Vec3)`
+- Isometry2|3 (translation ⨯ rotation)
+- Similarity2|3 (translation ⨯ rotation ⨯ uniform scale)
+- Affine2|3, Projective2|3, Transform2|3 (homogeneous-matrix transformations)
+- Perspective3, Orthographic3 (3D projections for computer graphics)
 - Transform
 - Angle
 
