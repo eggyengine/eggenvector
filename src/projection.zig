@@ -18,6 +18,7 @@ pub fn Perspective3(comptime T: type) type {
 
         const Self = @This();
 
+        /// Create the projection. Asserts the parameters are non-degenerate.
         pub fn init(aspect: T, fovy: T, znear: T, zfar: T) Self {
             std.debug.assert(znear != zfar);
             std.debug.assert(aspect != 0);
@@ -65,6 +66,7 @@ pub fn Orthographic3(comptime T: type) type {
 
         const Self = @This();
 
+        /// Create the projection. Asserts the parameters are non-degenerate.
         pub fn init(left: T, right: T, bottom: T, top: T, znear: T, zfar: T) Self {
             std.debug.assert(left != right);
             std.debug.assert(bottom != top);

@@ -8,6 +8,7 @@
 //! - transform (isometry, similarity, affine, projective, general)
 //! - projections (perspective, orthographic)
 //! - angles
+//! - a comptime clip-space convention (`config`), defaulting to vitellus
 //!
 //! for primarily `f32` but with support for `f64`, and backed by SIMD `@Vector` types
 
@@ -33,7 +34,9 @@ pub const Vec3u = vec.Vector3(u32);
 pub const Vec4u = vec.Vector4(u32);
 
 // --------------- matrices ---------------
-const mat = @import("mat.zig");
+/// Every matrix function, including the explicit projection variants
+/// (`perspectiveRH_ZO`, `frustumLH_NO`, `lookAtRH`, ...) that ignore `config`.
+pub const mat = @import("mat.zig");
 
 pub const Mat2 = mat.Mat2;
 pub const Mat3 = mat.Mat3;
@@ -88,6 +91,12 @@ pub const transformPoint4x4 = mat.transformPoint4x4;
 pub const transformDirection4x4 = mat.transformDirection4x4;
 pub const multiply4x4 = mat.multiply4x4;
 pub const inverse4x4 = mat.inverse4x4;
+
+// global config
+pub const Config = mat.Config;
+/// The global math config, fixed at compile time (default `.vitellus`).
+/// Override it by declaring, in your root source file: `pub const eggenvector_config: emath.Config = .{ .convention = .opengl };`
+pub const config = mat.config;
 
 // type validation
 pub const isPermittedType = mat.isPermittedType;
@@ -156,6 +165,13 @@ pub const Perspective3 = projection.Perspective3;
 /// A 3D orthographic projection for computer graphics.
 pub const Orthographic3 = projection.Orthographic3;
 
+const transform = @import("transform.zig");
+
+/// A position, rotation and scale (TRS) transform.
+pub const Transform = transform.Transform;
+/// A transform with both a local and a world component.
+pub const EntityTransform = transform.EntityTransform;
+
 // --------------- helpers ---------------
 
 /// Returns an identity quaternion rotated at an angle on an axis
@@ -206,4 +222,24 @@ test {
     _ = @import("similarity.zig");
     _ = @import("homogeneous.zig");
     _ = @import("projection.zig");
+}
+
+test "generic paths not reached by other tests compile and run" {
+    const m = identity(f32, 4);
+    try std.testing.expect(UnitQuat.fromRotationMatrix(m).approxEql(UnitQuat.identity(), 1e-6));
+    try std.testing.expect(Vec3i.init(4, 6, 8).div(Vec3i.init(2, 2, 2)).eql(Vec3i.init(2, 3, 4)));
+    const nonsquare = fromArray(f32, 2, 3, .{ .{ 1, 2 }, .{ 3, 4 }, .{ 5, 6 } });
+    try std.testing.expectEqual(@as(f32, 3), nonsquare.data[1][0]);
+    const t = Transform.identity.translate(Vec3.init(1, 2, 3));
+    try std.testing.expect(t.inverse().transformPoint(t.transformPoint(Vec3.one)).approxEql(Vec3.one, 1e-6));
+}
+
+test "SIMD matrix ops match scalar reference" {
+    const a = fromArray(f32, 2, 3, .{ .{ 1, 2 }, .{ 3, 4 }, .{ 5, 6 } });
+    const b = fromArray(f32, 3, 2, .{ .{ 7, 8, 9 }, .{ 10, 11, 12 } });
+    const c = mul(f32, 2, 3, 2, a, b);
+    // [1 3 5; 2 4 6] * [7 10; 8 11; 9 12] = [76 103; 100 136]
+    try std.testing.expect(mat.eql(f32, 2, 2, c, fromArray(f32, 2, 2, .{ .{ 76, 100 }, .{ 103, 136 } })));
+    try std.testing.expectEqual(@as(f32, 4), mat.get(f32, 2, 3, a, 1, 1));
+    try std.testing.expectEqual(@as(f32, 5), transpose(f32, 2, 3, a).data[0][2]);
 }

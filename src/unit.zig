@@ -10,6 +10,7 @@ pub fn Unit(comptime T: type) type {
         value: T,
 
         const Self = @This();
+        /// The scalar type.
         pub const Scalar = @TypeOf(@as(T, undefined).length());
 
         /// Normalize `value` and wrap it. Asserts that the norm is non-zero.

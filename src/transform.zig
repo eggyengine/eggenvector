@@ -1,4 +1,4 @@
-const math = @import("../math.zig");
+const math = @import("root.zig");
 
 /// A type that allows for position, rotation and scaling of an object.
 pub const Transform = struct {
@@ -6,6 +6,7 @@ pub const Transform = struct {
     rotation: math.Quat,
     scale: math.Vec3,
 
+    /// No translation, no rotation, unit scale.
     pub const identity = Transform{
         .position = math.Vec3.splat(0),
         .rotation = math.Quat.identity(),

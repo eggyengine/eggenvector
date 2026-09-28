@@ -1,6 +1,7 @@
 const std = @import("std");
 const vec = @import("vec.zig");
 
+/// Scalar types a `Matrix` may be built from.
 pub const PermittedTypes = enum {
     f16,
     f32,
@@ -16,6 +17,7 @@ pub const PermittedTypes = enum {
     u64,
 };
 
+/// Whether `T` is a numeric type usable as a matrix scalar.
 pub fn isPermittedType(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .float => true,
@@ -26,6 +28,7 @@ pub fn isPermittedType(comptime T: type) bool {
     };
 }
 
+/// Whether `T` is a floating point type.
 pub fn isFloatType(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .float, .comptime_float => true,
@@ -40,28 +43,28 @@ fn assertPermittedType(comptime T: type) void {
 }
 
 /// A generic MxN matrix type, specifically column-major order for compatability with the GPU (specifically vulkan).
+/// Each column is a SIMD `@Vector(rows, T)`, so column-wise operations vectorise.
 /// T must be a permitted numeric type (validated at comptime).
 pub fn Matrix(comptime T: type, comptime rows: usize, comptime cols: usize) type {
     comptime assertPermittedType(T);
 
     return struct {
-        data: [cols][rows]T,
+        data: [cols]Column,
 
+        /// A single column, as a SIMD vector.
+        pub const Column = @Vector(rows, T);
+        /// Number of rows.
         pub const Row = rows;
+        /// Number of columns.
         pub const Col = cols;
+        /// The scalar type.
         pub const Scalar = T;
     };
 }
 
 /// Create a matrix with all elements set to a value.
 pub fn splat(comptime T: type, comptime rows: usize, comptime cols: usize, value: T) Matrix(T, rows, cols) {
-    var result: Matrix(T, rows, cols) = undefined;
-    for (0..cols) |c| {
-        for (0..rows) |r| {
-            result.data[c][r] = value;
-        }
-    }
-    return result;
+    return .{ .data = @splat(@splat(value)) };
 }
 
 /// Create a zero matrix.
@@ -74,61 +77,61 @@ pub fn zero(comptime T: type, comptime rows: usize, comptime cols: usize) Matrix
 /// The size is provided by `row:column = size:size`
 pub fn identity(comptime T: type, comptime size: usize) Matrix(T, size, size) {
     var result = zero(T, size, size);
-    for (0..size) |i| {
+    inline for (0..size) |i| {
         result.data[i][i] = 1;
     }
     return result;
 }
 
-/// Create a matrix from a 2D array.
-pub fn fromArray(comptime T: type, comptime rows: usize, comptime cols: usize, data: [rows][cols]T) Matrix(T, rows, cols) {
-    return Matrix(T, rows, cols){ .data = data };
+/// Create a matrix from a 2D array in column-major order (each inner array is one column).
+pub fn fromArray(comptime T: type, comptime rows: usize, comptime cols: usize, data: [cols][rows]T) Matrix(T, rows, cols) {
+    var result: Matrix(T, rows, cols) = undefined;
+    inline for (0..cols) |c| result.data[c] = data[c];
+    return result;
 }
 
 /// Get element at row r, column c.
 pub fn get(comptime T: type, comptime rows: usize, comptime cols: usize, m: Matrix(T, rows, cols), r: usize, c: usize) T {
-    return m.data[c][r];
+    const col: [rows]T = m.data[c];
+    return col[r];
 }
 
 /// Set element at row r, column c.
 pub fn set(comptime T: type, comptime rows: usize, comptime cols: usize, m: *Matrix(T, rows, cols), r: usize, c: usize, value: T) void {
-    m.data[c][r] = value;
+    var col: [rows]T = m.data[c];
+    col[r] = value;
+    m.data[c] = col;
 }
 
-/// Matrix addition.
+/// Matrix addition (SIMD, per column).
 pub fn add(comptime T: type, comptime rows: usize, comptime cols: usize, a: Matrix(T, rows, cols), b: Matrix(T, rows, cols)) Matrix(T, rows, cols) {
     var result: Matrix(T, rows, cols) = undefined;
-    for (0..cols) |c| {
-        for (0..rows) |r| {
-            result.data[c][r] = a.data[c][r] + b.data[c][r];
-        }
-    }
+    inline for (0..cols) |c| result.data[c] = a.data[c] + b.data[c];
     return result;
 }
 
-/// Matrix subtraction.
+/// Matrix subtraction (SIMD, per column).
 pub fn sub(comptime T: type, comptime rows: usize, comptime cols: usize, a: Matrix(T, rows, cols), b: Matrix(T, rows, cols)) Matrix(T, rows, cols) {
     var result: Matrix(T, rows, cols) = undefined;
-    for (0..cols) |c| {
-        for (0..rows) |r| {
-            result.data[c][r] = a.data[c][r] - b.data[c][r];
-        }
-    }
+    inline for (0..cols) |c| result.data[c] = a.data[c] - b.data[c];
     return result;
 }
 
-/// Scalar multiplication.
+/// Scalar multiplication (SIMD, per column).
 pub fn scale(comptime T: type, comptime rows: usize, comptime cols: usize, m: Matrix(T, rows, cols), scalar: T) Matrix(T, rows, cols) {
     var result: Matrix(T, rows, cols) = undefined;
-    for (0..cols) |c| {
-        for (0..rows) |r| {
-            result.data[c][r] = m.data[c][r] * scalar;
-        }
-    }
+    inline for (0..cols) |c| result.data[c] = m.data[c] * @as(@Vector(rows, T), @splat(scalar));
     return result;
 }
 
-/// Matrix multiplication.
+/// Multiply a matrix by a column vector: a linear combination of `m`'s columns (SIMD).
+pub fn mulVec(comptime T: type, comptime rows: usize, comptime cols: usize, m: Matrix(T, rows, cols), v: @Vector(cols, T)) @Vector(rows, T) {
+    var sum: @Vector(rows, T) = @splat(0);
+    inline for (0..cols) |k| sum += m.data[k] * @as(@Vector(rows, T), @splat(v[k]));
+    return sum;
+}
+
+/// Matrix multiplication (SIMD: each result column is `a` times a column of `b`).
 pub fn mul(
     comptime T: type,
     comptime a_rows: usize,
@@ -137,24 +140,16 @@ pub fn mul(
     a: Matrix(T, a_rows, a_cols),
     b: Matrix(T, a_cols, b_cols),
 ) Matrix(T, a_rows, b_cols) {
-    var result = zero(T, a_rows, b_cols);
-    for (0..a_rows) |r| {
-        for (0..b_cols) |c| {
-            var sum: T = 0;
-            for (0..a_cols) |k| {
-                sum += a.data[k][r] * b.data[c][k];
-            }
-            result.data[c][r] = sum;
-        }
-    }
+    var result: Matrix(T, a_rows, b_cols) = undefined;
+    inline for (0..b_cols) |c| result.data[c] = mulVec(T, a_rows, a_cols, a, b.data[c]);
     return result;
 }
 
 /// Transpose the matrix.
 pub fn transpose(comptime T: type, comptime rows: usize, comptime cols: usize, m: Matrix(T, rows, cols)) Matrix(T, cols, rows) {
     var result: Matrix(T, cols, rows) = undefined;
-    for (0..cols) |c| {
-        for (0..rows) |r| {
+    inline for (0..cols) |c| {
+        inline for (0..rows) |r| {
             result.data[r][c] = m.data[c][r];
         }
     }
@@ -270,11 +265,8 @@ pub fn scaling3x3(comptime T: type, sx: T, sy: T, sz: T) Matrix(T, 3, 3) {
 
 /// Transform a 3D vector by a 3x3 matrix.
 pub fn transformVec3by3x3(comptime T: type, m: Matrix(T, 3, 3), v: vec.Vector3(T)) vec.Vector3(T) {
-    return vec.Vector3(T){
-        .x = m.data[0][0] * v.x + m.data[1][0] * v.y + m.data[2][0] * v.z,
-        .y = m.data[0][1] * v.x + m.data[1][1] * v.y + m.data[2][1] * v.z,
-        .z = m.data[0][2] * v.x + m.data[1][2] * v.y + m.data[2][2] * v.z,
-    };
+    const r = mulVec(T, 3, 3, m, .{ v.x, v.y, v.z });
+    return .{ .x = r[0], .y = r[1], .z = r[2] };
 }
 
 /// Create 4x4 translation matrix.
@@ -381,93 +373,102 @@ pub fn rotationAxis4x4(comptime T: type, axis: vec.Vector3(T), angle: T) Matrix(
     };
 }
 
-/// Create a look-at view matrix.
+/// Global math settings, fixed at compile time. Declare `pub const eggenvector_config: Config`
+/// in your root source file (the one with `main`) to override the defaults.
+pub const Config = struct {
+    convention: Convention = .vitellus,
+
+    /// Coordinate/clip-space convention used by `lookAt4x4`, `perspective4x4`, `orthographic4x4`,
+    /// `projectPoint` and `unprojectPoint`.
+    pub const Convention = enum {
+        /// Right-handed, Y up, depth [0, 1]. Vitellus/Slang (D3D/Metal clip space on every backend,
+        /// the Vulkan backend flips the viewport for you).
+        vitellus,
+        /// Right-handed, Y up, depth [-1, 1].
+        opengl,
+        /// Right-handed, Y down, depth [0, 1]. Raw Vulkan without a negative-height viewport.
+        vulkan,
+        /// Left-handed, Y up, depth [0, 1].
+        directx,
+        /// Right-handed, Y up, depth [0, 1].
+        metal,
+        /// Right-handed, Y up, depth [0, 1].
+        webgpu,
+    };
+};
+
+const root = @import("root");
+
+/// The global config: the root file's `eggenvector_config` if it declares one, otherwise the defaults.
+/// Comptime-known, so every convention `switch` below compiles down to a single branch.
+pub const config: Config = if (@hasDecl(root, "eggenvector_config")) root.eggenvector_config else .{};
+
+/// Create a look-at view matrix for `config.convention` (left-handed for `.directx`, right-handed otherwise).
 /// Requires floating point type.
 pub fn lookAt4x4(comptime T: type, eye: vec.Vector3(T), target: vec.Vector3(T), up: vec.Vector3(T)) Matrix(T, 4, 4) {
-    comptime if (!isFloatType(T)) @compileError("lookAt4x4 requires a floating point type");
-    const f = target.sub(eye).normalize();
-    const s = f.cross(up).normalize();
-    const u = s.cross(f);
+    return lookAtFor(config.convention, T, eye, target, up);
+}
 
-    return Matrix(T, 4, 4){
-        .data = .{
-            .{ s.x, u.x, -f.x, 0 },
-            .{ s.y, u.y, -f.y, 0 },
-            .{ s.z, u.z, -f.z, 0 },
-            .{ -s.dot(eye), -u.dot(eye), f.dot(eye), 1 },
-        },
+fn lookAtFor(comptime c: Config.Convention, comptime T: type, eye: vec.Vector3(T), target: vec.Vector3(T), up: vec.Vector3(T)) Matrix(T, 4, 4) {
+    return switch (c) {
+        .directx => lookAtLH(T, eye, target, up),
+        else => lookAtRH(T, eye, target, up),
     };
 }
 
-/// Create a perspective projection matrix (right-handed, zero-to-one depth, column-major).
+/// Create a perspective projection matrix for `config.convention`.
 ///
 /// fov_y: vertical field of view in radians
 /// aspect: width / height
 /// near, far: near and far clipping planes
 /// Requires floating point type.
 pub fn perspective4x4(comptime T: type, fov_y: T, aspect: T, near: T, far: T) Matrix(T, 4, 4) {
-    comptime if (!isFloatType(T)) @compileError("perspective4x4 requires a floating point type");
-    const tan_half_fov = @tan(fov_y / 2);
+    return perspectiveFor(config.convention, T, fov_y, aspect, near, far);
+}
 
-    return Matrix(T, 4, 4){
-        .data = .{
-            .{ 1 / (aspect * tan_half_fov), 0, 0, 0 },
-            .{ 0, -1 / tan_half_fov, 0, 0 },
-            .{ 0, 0, far / (near - far), -1 },
-            .{ 0, 0, -(far * near) / (far - near), 0 },
-        },
+fn perspectiveFor(comptime c: Config.Convention, comptime T: type, fov_y: T, aspect: T, near: T, far: T) Matrix(T, 4, 4) {
+    return switch (c) {
+        .vitellus, .metal, .webgpu => perspectiveRH_ZO(T, fov_y, aspect, near, far),
+        .opengl => perspectiveRH_NO(T, fov_y, aspect, near, far),
+        .vulkan => perspectiveVulkan(T, fov_y, aspect, near, far),
+        .directx => perspectiveLH_ZO(T, fov_y, aspect, near, far),
     };
 }
 
-/// Create an orthographic projection matrix.
+/// Create an orthographic projection matrix for `config.convention`.
 /// Requires floating point type.
-///
-/// Supports vulkan-based contexts.
 pub fn orthographic4x4(comptime T: type, left: T, right: T, bottom: T, top: T, near: T, far: T) Matrix(T, 4, 4) {
-    comptime if (!isFloatType(T)) @compileError("orthographic4x4 requires a floating point type");
-    const width = right - left;
-    const height = top - bottom;
-    const depth = far - near;
+    return orthographicFor(config.convention, T, left, right, bottom, top, near, far);
+}
 
-    return Matrix(T, 4, 4){
-        .data = .{
-            .{ 2 / width, 0, 0, 0 },
-            .{ 0, -2 / height, 0, 0 },
-            .{ 0, 0, 1 / depth, 0 },
-            .{ -(right + left) / width, (top + bottom) / height, -near / depth, 1 },
-        },
+fn orthographicFor(comptime c: Config.Convention, comptime T: type, left: T, right: T, bottom: T, top: T, near: T, far: T) Matrix(T, 4, 4) {
+    return switch (c) {
+        .vitellus, .metal, .webgpu => orthographicRH_ZO(T, left, right, bottom, top, near, far),
+        .opengl => orthographicRH_NO(T, left, right, bottom, top, near, far),
+        .vulkan => orthographicVulkan(T, left, right, bottom, top, near, far),
+        .directx => orthographicLH_ZO(T, left, right, bottom, top, near, far),
     };
 }
 
 /// Transform a 4D vector by a 4x4 matrix.
 pub fn transformVec4by4x4(comptime T: type, m: Matrix(T, 4, 4), v: vec.Vector4(T)) vec.Vector4(T) {
-    return vec.Vector4(T){
-        .x = m.data[0][0] * v.x + m.data[1][0] * v.y + m.data[2][0] * v.z + m.data[3][0] * v.w,
-        .y = m.data[0][1] * v.x + m.data[1][1] * v.y + m.data[2][1] * v.z + m.data[3][1] * v.w,
-        .z = m.data[0][2] * v.x + m.data[1][2] * v.y + m.data[2][2] * v.z + m.data[3][2] * v.w,
-        .w = m.data[0][3] * v.x + m.data[1][3] * v.y + m.data[2][3] * v.z + m.data[3][3] * v.w,
-    };
+    const r = mulVec(T, 4, 4, m, .{ v.x, v.y, v.z, v.w });
+    return .{ .x = r[0], .y = r[1], .z = r[2], .w = r[3] };
 }
 
 /// Transform a 3D point (w=1) by a 4x4 matrix.
 /// Requires floating point type.
 pub fn transformPoint4x4(comptime T: type, m: Matrix(T, 4, 4), v: vec.Vector3(T)) vec.Vector3(T) {
     comptime if (!isFloatType(T)) @compileError("transformPoint4x4 requires a floating point type");
-    const w = m.data[0][3] * v.x + m.data[1][3] * v.y + m.data[2][3] * v.z + m.data[3][3];
-    return vec.Vector3(T){
-        .x = (m.data[0][0] * v.x + m.data[1][0] * v.y + m.data[2][0] * v.z + m.data[3][0]) / w,
-        .y = (m.data[0][1] * v.x + m.data[1][1] * v.y + m.data[2][1] * v.z + m.data[3][1]) / w,
-        .z = (m.data[0][2] * v.x + m.data[1][2] * v.y + m.data[2][2] * v.z + m.data[3][2]) / w,
-    };
+    const r = mulVec(T, 4, 4, m, .{ v.x, v.y, v.z, 1 });
+    const p = r / @as(@Vector(4, T), @splat(r[3]));
+    return .{ .x = p[0], .y = p[1], .z = p[2] };
 }
 
 /// Transform a 3D direction (w=0, no translation) by a 4x4 matrix.
 pub fn transformDirection4x4(comptime T: type, m: Matrix(T, 4, 4), v: vec.Vector3(T)) vec.Vector3(T) {
-    return vec.Vector3(T){
-        .x = m.data[0][0] * v.x + m.data[1][0] * v.y + m.data[2][0] * v.z,
-        .y = m.data[0][1] * v.x + m.data[1][1] * v.y + m.data[2][1] * v.z,
-        .z = m.data[0][2] * v.x + m.data[1][2] * v.y + m.data[2][2] * v.z,
-    };
+    const r = mulVec(T, 4, 4, m, .{ v.x, v.y, v.z, 0 });
+    return .{ .x = r[0], .y = r[1], .z = r[2] };
 }
 
 /// Multiply two 4x4 matrices.
@@ -672,7 +673,7 @@ pub fn perspectiveLH_NO(comptime T: type, fov_y: T, aspect: T, near: T, far: T) 
 }
 
 /// Vulkan-specific perspective (RH, ZO, Y-flipped).
-/// This is the original perspective4x4 — kept for Vulkan convenience.
+/// Used by `perspective4x4` under the `.vulkan` convention.
 pub fn perspectiveVulkan(comptime T: type, fov_y: T, aspect: T, near: T, far: T) Matrix(T, 4, 4) {
     comptime if (!isFloatType(T)) @compileError("perspectiveVulkan requires a floating point type");
     const tan_half_fov = @tan(fov_y / 2);
@@ -807,7 +808,7 @@ pub fn orthographicLH_NO(comptime T: type, left: T, right_: T, bottom: T, top: T
 }
 
 /// Vulkan-specific orthographic (RH, ZO, Y-flipped).
-/// This is the original orthographic4x4 — kept for Vulkan convenience.
+/// Used by `orthographic4x4` under the `.vulkan` convention.
 pub fn orthographicVulkan(comptime T: type, left: T, right_: T, bottom: T, top: T, near: T, far: T) Matrix(T, 4, 4) {
     comptime if (!isFloatType(T)) @compileError("orthographicVulkan requires a floating point type");
     const width = right_ - left;
@@ -941,7 +942,7 @@ pub fn projectPoint(comptime T: type, obj: vec.Vector3(T), model: Matrix(T, 4, 4
     // Map to [0, 1]
     result.x = result.x * 0.5 + 0.5;
     result.y = result.y * 0.5 + 0.5;
-    result.z = result.z * 0.5 + 0.5;
+    if (comptime config.convention == .opengl) result.z = result.z * 0.5 + 0.5;
 
     // Map to viewport
     return vec.Vector3(T){
@@ -965,7 +966,7 @@ pub fn unprojectPoint(comptime T: type, win: vec.Vector3(T), model: Matrix(T, 4,
     var tmp = vec.Vector4(T){
         .x = (win.x - viewport.x) / viewport.z * 2 - 1,
         .y = (win.y - viewport.y) / viewport.w * 2 - 1,
-        .z = win.z * 2 - 1,
+        .z = if (comptime config.convention == .opengl) win.z * 2 - 1 else win.z,
         .w = 1,
     };
 
@@ -979,22 +980,18 @@ pub fn unprojectPoint(comptime T: type, win: vec.Vector3(T), model: Matrix(T, 4,
     };
 }
 
-/// Check if two matrices are approximately equal (element-wise).
+/// Check if two matrices are approximately equal (element-wise, SIMD).
 pub fn approxEql(comptime T: type, comptime rows: usize, comptime cols: usize, a: Matrix(T, rows, cols), b: Matrix(T, rows, cols), epsilon: T) bool {
-    for (0..cols) |c| {
-        for (0..rows) |r| {
-            if (@abs(a.data[c][r] - b.data[c][r]) > epsilon) return false;
-        }
+    inline for (0..cols) |c| {
+        if (@reduce(.Or, @abs(a.data[c] - b.data[c]) > @as(@Vector(rows, T), @splat(epsilon)))) return false;
     }
     return true;
 }
 
-/// Check if two matrices are exactly equal.
+/// Check if two matrices are exactly equal (SIMD).
 pub fn eql(comptime T: type, comptime rows: usize, comptime cols: usize, a: Matrix(T, rows, cols), b: Matrix(T, rows, cols)) bool {
-    for (0..cols) |c| {
-        for (0..rows) |r| {
-            if (a.data[c][r] != b.data[c][r]) return false;
-        }
+    inline for (0..cols) |c| {
+        if (@reduce(.Or, a.data[c] != b.data[c])) return false;
     }
     return true;
 }
@@ -1002,20 +999,58 @@ pub fn eql(comptime T: type, comptime rows: usize, comptime cols: usize, a: Matr
 /// Compute the trace of a square matrix (sum of diagonal elements).
 pub fn trace(comptime T: type, comptime size: usize, m: Matrix(T, size, size)) T {
     var result: T = 0;
-    for (0..size) |i| {
+    inline for (0..size) |i| {
         result += m.data[i][i];
     }
     return result;
 }
 
+/// A 2x2 `f32` matrix (column-major).
 pub const Mat2 = Matrix(f32, 2, 2);
+/// A 3x3 `f32` matrix (column-major).
 pub const Mat3 = Matrix(f32, 3, 3);
+/// A 4x4 `f32` matrix (column-major).
 pub const Mat4 = Matrix(f32, 4, 4);
 
+/// A 2x2 `f64` matrix (column-major).
 pub const Mat2d = Matrix(f64, 2, 2);
+/// A 3x3 `f64` matrix (column-major).
 pub const Mat3d = Matrix(f64, 3, 3);
+/// A 4x4 `f64` matrix (column-major).
 pub const Mat4d = Matrix(f64, 4, 4);
 
+/// A 2x2 `i32` matrix (column-major).
 pub const Mat2i = Matrix(i32, 2, 2);
+/// A 3x3 `i32` matrix (column-major).
 pub const Mat3i = Matrix(i32, 3, 3);
+/// A 4x4 `i32` matrix (column-major).
 pub const Mat4i = Matrix(i32, 4, 4);
+
+test "each convention's projection and lookAt" {
+    const V3 = vec.Vector3(f32);
+    inline for (.{
+        .{ Config.Convention.vitellus, 0, 1 },
+        .{ Config.Convention.metal, 0, 1 },
+        .{ Config.Convention.webgpu, 0, 1 },
+        .{ Config.Convention.opengl, -1, 1 },
+        .{ Config.Convention.vulkan, 0, -1 },
+        .{ Config.Convention.directx, 0, 1 },
+    }) |case| {
+        const c = case[0];
+        const forward: f32 = if (c == .directx) 1 else -1; // view-space forward is +Z only in left-handed
+        const p = perspectiveFor(c, f32, 1.0, 1.0, 0.5, 50.0);
+        const o = orthographicFor(c, f32, -1, 1, -1, 1, 0.5, 50.0);
+        try std.testing.expectApproxEqAbs(@as(f32, case[1]), transformPoint4x4(f32, p, V3.init(0, 0, 0.5 * forward)).z, 1e-5);
+        try std.testing.expectApproxEqAbs(1.0, transformPoint4x4(f32, p, V3.init(0, 0, 50 * forward)).z, 1e-4);
+        try std.testing.expectApproxEqAbs(@as(f32, case[1]), transformPoint4x4(f32, o, V3.init(0, 0, 0.5 * forward)).z, 1e-5);
+        // clip-space Y direction: up for everyone but raw vulkan
+        try std.testing.expect(transformPoint4x4(f32, p, V3.init(0, 1, forward)).y * @as(f32, case[2]) > 0);
+        // looking straight down the convention's forward axis is the identity view
+        const view = lookAtFor(c, f32, V3.zero, V3.init(0, 0, forward), V3.up);
+        try std.testing.expect(approxEql(f32, 4, 4, view, identity(f32, 4), 1e-6));
+    }
+}
+
+test "default config is vitellus" {
+    try std.testing.expectEqual(Config.Convention.vitellus, config.convention);
+}

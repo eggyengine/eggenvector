@@ -2,6 +2,7 @@ const std = @import("std");
 const vec = @import("vec.zig");
 const mat = @import("mat.zig");
 
+/// A quaternion (x, y, z, w) stored in a single 4-lane SIMD `@Vector`.
 pub fn Quaternion(comptime T: type) type {
     return struct {
         const Vec4 = @Vector(4, T);
@@ -87,52 +88,56 @@ pub fn Quaternion(comptime T: type) type {
 
         /// Create quaternion from rotation matrix.
         pub fn fromMatrix(m: mat.Matrix(T, 4, 4)) Self {
-            const trace = m.get(0, 0) + m.get(1, 1) + m.get(2, 2);
+            const trace = m.data[0][0] + m.data[1][1] + m.data[2][2];
 
             if (trace > 0) {
                 const s = @sqrt(trace + 1) * 2;
                 return .{ .v = Vec4{
-                    (m.get(2, 1) - m.get(1, 2)) / s,
-                    (m.get(0, 2) - m.get(2, 0)) / s,
-                    (m.get(1, 0) - m.get(0, 1)) / s,
+                    (m.data[1][2] - m.data[2][1]) / s,
+                    (m.data[2][0] - m.data[0][2]) / s,
+                    (m.data[0][1] - m.data[1][0]) / s,
                     s / 4,
                 } };
-            } else if (m.get(0, 0) > m.get(1, 1) and m.get(0, 0) > m.get(2, 2)) {
-                const s = @sqrt(1 + m.get(0, 0) - m.get(1, 1) - m.get(2, 2)) * 2;
+            } else if (m.data[0][0] > m.data[1][1] and m.data[0][0] > m.data[2][2]) {
+                const s = @sqrt(1 + m.data[0][0] - m.data[1][1] - m.data[2][2]) * 2;
                 return .{ .v = Vec4{
                     s / 4,
-                    (m.get(0, 1) + m.get(1, 0)) / s,
-                    (m.get(0, 2) + m.get(2, 0)) / s,
-                    (m.get(2, 1) - m.get(1, 2)) / s,
+                    (m.data[1][0] + m.data[0][1]) / s,
+                    (m.data[2][0] + m.data[0][2]) / s,
+                    (m.data[1][2] - m.data[2][1]) / s,
                 } };
-            } else if (m.get(1, 1) > m.get(2, 2)) {
-                const s = @sqrt(1 + m.get(1, 1) - m.get(0, 0) - m.get(2, 2)) * 2;
+            } else if (m.data[1][1] > m.data[2][2]) {
+                const s = @sqrt(1 + m.data[1][1] - m.data[0][0] - m.data[2][2]) * 2;
                 return .{ .v = Vec4{
-                    (m.get(0, 1) + m.get(1, 0)) / s,
+                    (m.data[1][0] + m.data[0][1]) / s,
                     s / 4,
-                    (m.get(1, 2) + m.get(2, 1)) / s,
-                    (m.get(0, 2) - m.get(2, 0)) / s,
+                    (m.data[2][1] + m.data[1][2]) / s,
+                    (m.data[2][0] - m.data[0][2]) / s,
                 } };
             } else {
-                const s = @sqrt(1 + m.get(2, 2) - m.get(0, 0) - m.get(1, 1)) * 2;
+                const s = @sqrt(1 + m.data[2][2] - m.data[0][0] - m.data[1][1]) * 2;
                 return .{ .v = Vec4{
-                    (m.get(0, 2) + m.get(2, 0)) / s,
-                    (m.get(1, 2) + m.get(2, 1)) / s,
+                    (m.data[2][0] + m.data[0][2]) / s,
+                    (m.data[2][1] + m.data[1][2]) / s,
                     s / 4,
-                    (m.get(1, 0) - m.get(0, 1)) / s,
+                    (m.data[0][1] - m.data[1][0]) / s,
                 } };
             }
         }
 
+        /// The x (imaginary i) component.
         pub fn x(self: Self) T {
             return self.v[0];
         }
+        /// The y (imaginary j) component.
         pub fn y(self: Self) T {
             return self.v[1];
         }
+        /// The z (imaginary k) component.
         pub fn z(self: Self) T {
             return self.v[2];
         }
+        /// The w (real) component.
         pub fn w(self: Self) T {
             return self.v[3];
         }
@@ -393,7 +398,9 @@ pub fn Quaternion(comptime T: type) type {
     };
 }
 
+/// An `f32` quaternion.
 pub const Quat = Quaternion(f32);
+/// An `f64` quaternion.
 pub const Quatd = Quaternion(f64);
 
 /// A quaternion with a norm equal to one, representing a 3D rotation.
@@ -533,7 +540,9 @@ pub fn UnitQuaternion(comptime T: type) type {
     };
 }
 
+/// An `f32` unit quaternion.
 pub const UnitQuat = UnitQuaternion(f32);
+/// An `f64` unit quaternion.
 pub const UnitQuatd = UnitQuaternion(f64);
 
 const testing = std.testing;

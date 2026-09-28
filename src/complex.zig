@@ -86,21 +86,26 @@ pub fn UnitComplex(comptime T: type) type {
 
         /// Convert to a 2x2 rotation matrix.
         pub fn toRotationMatrix(self: Self) mat.Matrix(T, 2, 2) {
-            return .{ .data = .{
-                .{ self.re, self.im }, // col 0
-                .{ -self.im, self.re }, // col 1
-            } };
+            return .{
+                .data = .{
+                    .{ self.re, self.im }, // col 0
+                    .{ -self.im, self.re }, // col 1
+                },
+            };
         }
 
         /// Convert to a 3x3 homogeneous matrix.
         pub fn toHomogeneous(self: Self) mat.Matrix(T, 3, 3) {
-            return .{ .data = .{
-                .{ self.re, self.im, 0 }, // col 0
-                .{ -self.im, self.re, 0 }, // col 1
-                .{ 0, 0, 1 }, // col 2
-            } };
+            return .{
+                .data = .{
+                    .{ self.re, self.im, 0 }, // col 0
+                    .{ -self.im, self.re, 0 }, // col 1
+                    .{ 0, 0, 1 }, // col 2
+                },
+            };
         }
 
+        /// Approximate equality: true when every component differs by at most `epsilon`.
         pub fn approxEql(self: Self, other: Self, epsilon: T) bool {
             return @abs(self.re - other.re) <= epsilon and @abs(self.im - other.im) <= epsilon;
         }

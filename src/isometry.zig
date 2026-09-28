@@ -18,6 +18,7 @@ pub fn Isometry2(comptime T: type) type {
         const Rot = complex.UnitComplex(T);
         const V = vec.Vector2(T);
 
+        /// The identity transformation.
         pub fn identity() Self {
             return .{ .rotation = Rot.identity(), .translation = V.zero };
         }
@@ -27,14 +28,17 @@ pub fn Isometry2(comptime T: type) type {
             return .{ .rotation = Rot.fromAngle(angle), .translation = translation };
         }
 
+        /// Create from its individual parts.
         pub fn fromParts(translation: V, rotation: Rot) Self {
             return .{ .rotation = rotation, .translation = translation };
         }
 
+        /// A pure translation (identity rotation).
         pub fn fromTranslation(translation: V) Self {
             return .{ .rotation = Rot.identity(), .translation = translation };
         }
 
+        /// A pure rotation (zero translation).
         pub fn fromRotation(rotation: Rot) Self {
             return .{ .rotation = rotation, .translation = V.zero };
         }
@@ -47,6 +51,7 @@ pub fn Isometry2(comptime T: type) type {
             };
         }
 
+        /// The inverse transformation.
         pub fn inverse(self: Self) Self {
             const inv_rot = self.rotation.inverse();
             return .{
@@ -65,10 +70,12 @@ pub fn Isometry2(comptime T: type) type {
             return self.rotation.rotateVector(v);
         }
 
+        /// Apply the inverse transformation to a point, without computing the inverse explicitly.
         pub fn inverseTransformPoint(self: Self, p: V) V {
             return self.rotation.inverseRotateVector(p.sub(self.translation));
         }
 
+        /// Apply the inverse transformation to a vector, without computing the inverse explicitly.
         pub fn inverseTransformVector(self: Self, v: V) V {
             return self.rotation.inverseRotateVector(v);
         }
@@ -88,6 +95,7 @@ pub fn Isometry2(comptime T: type) type {
             return m;
         }
 
+        /// Approximate equality: true when every component differs by at most `epsilon`.
         pub fn approxEql(self: Self, other: Self, epsilon: T) bool {
             return self.rotation.approxEql(other.rotation, epsilon) and
                 self.translation.approxEql(other.translation, epsilon);
@@ -109,6 +117,7 @@ pub fn Isometry3(comptime T: type) type {
         const Rot = quat.UnitQuaternion(T);
         const V = vec.Vector3(T);
 
+        /// The identity transformation.
         pub fn identity() Self {
             return .{ .rotation = Rot.identity(), .translation = V.zero };
         }
@@ -118,14 +127,17 @@ pub fn Isometry3(comptime T: type) type {
             return .{ .rotation = Rot.fromScaledAxis(axis_angle), .translation = translation };
         }
 
+        /// Create from its individual parts.
         pub fn fromParts(translation: V, rotation: Rot) Self {
             return .{ .rotation = rotation, .translation = translation };
         }
 
+        /// A pure translation (identity rotation).
         pub fn fromTranslation(translation: V) Self {
             return .{ .rotation = Rot.identity(), .translation = translation };
         }
 
+        /// A pure rotation (zero translation).
         pub fn fromRotation(rotation: Rot) Self {
             return .{ .rotation = rotation, .translation = V.zero };
         }
@@ -138,6 +150,7 @@ pub fn Isometry3(comptime T: type) type {
             };
         }
 
+        /// The inverse transformation.
         pub fn inverse(self: Self) Self {
             const inv_rot = self.rotation.inverse();
             return .{
@@ -156,10 +169,12 @@ pub fn Isometry3(comptime T: type) type {
             return self.rotation.rotateVector(v);
         }
 
+        /// Apply the inverse transformation to a point, without computing the inverse explicitly.
         pub fn inverseTransformPoint(self: Self, p: V) V {
             return self.rotation.inverseRotateVector(p.sub(self.translation));
         }
 
+        /// Apply the inverse transformation to a vector, without computing the inverse explicitly.
         pub fn inverseTransformVector(self: Self, v: V) V {
             return self.rotation.inverseRotateVector(v);
         }
@@ -179,6 +194,7 @@ pub fn Isometry3(comptime T: type) type {
             return m;
         }
 
+        /// Approximate equality: true when every component differs by at most `epsilon`.
         pub fn approxEql(self: Self, other: Self, epsilon: T) bool {
             return self.rotation.approxEql(other.rotation, epsilon) and
                 self.translation.approxEql(other.translation, epsilon);

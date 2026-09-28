@@ -23,9 +23,12 @@ fn HomogeneousBase(comptime T: type, comptime dim: usize, comptime category: Tra
         matrix: mat.Matrix(T, n, n),
 
         const Self = @This();
+        /// The point/vector type this transformation acts on.
         pub const Point = if (dim == 2) vec.Vector2(T) else vec.Vector3(T);
+        /// The comptime category of this transformation.
         pub const Category = category;
 
+        /// The identity transformation.
         pub fn identity() Self {
             return .{ .matrix = mat.identity(T, n) };
         }
@@ -100,6 +103,7 @@ fn HomogeneousBase(comptime T: type, comptime dim: usize, comptime category: Tra
             return .{ .matrix = self.matrix };
         }
 
+        /// Approximate equality: true when every component differs by at most `epsilon`.
         pub fn approxEql(self: Self, other: Self, epsilon: T) bool {
             return mat.approxEql(T, n, n, self.matrix, other.matrix, epsilon);
         }

@@ -19,6 +19,7 @@ pub fn Similarity2(comptime T: type) type {
         const Iso = isometry.Isometry2(T);
         const V = vec.Vector2(T);
 
+        /// The identity transformation.
         pub fn identity() Self {
             return .{ .isometry = Iso.identity(), .scaling = 1 };
         }
@@ -29,15 +30,18 @@ pub fn Similarity2(comptime T: type) type {
             return .{ .isometry = Iso.init(translation, angle), .scaling = scaling };
         }
 
+        /// Create from its individual parts.
         pub fn fromParts(iso: Iso, scaling: T) Self {
             std.debug.assert(scaling != 0);
             return .{ .isometry = iso, .scaling = scaling };
         }
 
+        /// A similarity with a scale factor of one.
         pub fn fromIsometry(iso: Iso) Self {
             return .{ .isometry = iso, .scaling = 1 };
         }
 
+        /// A pure uniform scale.
         pub fn fromScaling(scaling: T) Self {
             std.debug.assert(scaling != 0);
             return .{ .isometry = Iso.identity(), .scaling = scaling };
@@ -56,6 +60,7 @@ pub fn Similarity2(comptime T: type) type {
             };
         }
 
+        /// The inverse transformation.
         pub fn inverse(self: Self) Self {
             const inv_rot = self.isometry.rotation.inverse();
             const inv_scale = 1 / self.scaling;
@@ -78,10 +83,12 @@ pub fn Similarity2(comptime T: type) type {
             return self.isometry.rotation.rotateVector(v.scale(self.scaling));
         }
 
+        /// Apply the inverse transformation to a point, without computing the inverse explicitly.
         pub fn inverseTransformPoint(self: Self, p: V) V {
             return self.isometry.rotation.inverseRotateVector(p.sub(self.isometry.translation)).scale(1 / self.scaling);
         }
 
+        /// Apply the inverse transformation to a vector, without computing the inverse explicitly.
         pub fn inverseTransformVector(self: Self, v: V) V {
             return self.isometry.rotation.inverseRotateVector(v).scale(1 / self.scaling);
         }
@@ -89,14 +96,12 @@ pub fn Similarity2(comptime T: type) type {
         /// Convert to a 3x3 homogeneous matrix.
         pub fn toHomogeneous(self: Self) mat.Matrix(T, 3, 3) {
             var m = self.isometry.toHomogeneous();
-            for (0..2) |c| {
-                for (0..2) |r| {
-                    m.data[c][r] *= self.scaling;
-                }
-            }
+            // the homogeneous row of the rotation columns is 0, so scaling the whole column is exact
+            inline for (0..2) |c| m.data[c] *= @as(@TypeOf(m.data[c]), @splat(self.scaling));
             return m;
         }
 
+        /// Approximate equality: true when every component differs by at most `epsilon`.
         pub fn approxEql(self: Self, other: Self, epsilon: T) bool {
             return self.isometry.approxEql(other.isometry, epsilon) and
                 @abs(self.scaling - other.scaling) <= epsilon;
@@ -118,6 +123,7 @@ pub fn Similarity3(comptime T: type) type {
         const Iso = isometry.Isometry3(T);
         const V = vec.Vector3(T);
 
+        /// The identity transformation.
         pub fn identity() Self {
             return .{ .isometry = Iso.identity(), .scaling = 1 };
         }
@@ -128,15 +134,18 @@ pub fn Similarity3(comptime T: type) type {
             return .{ .isometry = Iso.init(translation, axis_angle), .scaling = scaling };
         }
 
+        /// Create from its individual parts.
         pub fn fromParts(iso: Iso, scaling: T) Self {
             std.debug.assert(scaling != 0);
             return .{ .isometry = iso, .scaling = scaling };
         }
 
+        /// A similarity with a scale factor of one.
         pub fn fromIsometry(iso: Iso) Self {
             return .{ .isometry = iso, .scaling = 1 };
         }
 
+        /// A pure uniform scale.
         pub fn fromScaling(scaling: T) Self {
             std.debug.assert(scaling != 0);
             return .{ .isometry = Iso.identity(), .scaling = scaling };
@@ -155,6 +164,7 @@ pub fn Similarity3(comptime T: type) type {
             };
         }
 
+        /// The inverse transformation.
         pub fn inverse(self: Self) Self {
             const inv_rot = self.isometry.rotation.inverse();
             const inv_scale = 1 / self.scaling;
@@ -177,10 +187,12 @@ pub fn Similarity3(comptime T: type) type {
             return self.isometry.rotation.rotateVector(v.scale(self.scaling));
         }
 
+        /// Apply the inverse transformation to a point, without computing the inverse explicitly.
         pub fn inverseTransformPoint(self: Self, p: V) V {
             return self.isometry.rotation.inverseRotateVector(p.sub(self.isometry.translation)).scale(1 / self.scaling);
         }
 
+        /// Apply the inverse transformation to a vector, without computing the inverse explicitly.
         pub fn inverseTransformVector(self: Self, v: V) V {
             return self.isometry.rotation.inverseRotateVector(v).scale(1 / self.scaling);
         }
@@ -188,14 +200,12 @@ pub fn Similarity3(comptime T: type) type {
         /// Convert to a 4x4 homogeneous matrix.
         pub fn toHomogeneous(self: Self) mat.Matrix(T, 4, 4) {
             var m = self.isometry.toHomogeneous();
-            for (0..3) |c| {
-                for (0..3) |r| {
-                    m.data[c][r] *= self.scaling;
-                }
-            }
+            // the homogeneous row of the rotation columns is 0, so scaling the whole column is exact
+            inline for (0..3) |c| m.data[c] *= @as(@TypeOf(m.data[c]), @splat(self.scaling));
             return m;
         }
 
+        /// Approximate equality: true when every component differs by at most `epsilon`.
         pub fn approxEql(self: Self, other: Self, epsilon: T) bool {
             return self.isometry.approxEql(other.isometry, epsilon) and
                 @abs(self.scaling - other.scaling) <= epsilon;
