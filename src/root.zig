@@ -196,7 +196,7 @@ pub fn perspective(fov_y: f32, aspect: f32, near: f32, far: f32) Mat4 {
 /// Initialise with `Padding(...).default`
 pub fn Padding(comptime T: type, comptime count: usize) type {
     return struct {
-        data: [count]T = [_]T{0} ** count,
+        data: [count]T = @splat(0),
 
         /// The default initialiser.
         ///
